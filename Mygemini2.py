@@ -37,7 +37,7 @@ except ImportError:
 
 # --- ⚠️ 중요: Gemini API 키 설정 ⚠️ ---
 # 실제 사용자의 API 키로 대체해야 합니다.
-os.environ["GEMINI_API_KEY"] = "AIzaSyDFYx3mr8dY8HwRMaPD2egzjVso7mkgops"
+os.environ["GEMINI_API_KEY"] = "GEMINI_API_KEY"
 # ------------------------------------
 
 
@@ -233,4 +233,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = GeminiApp()
     window.show()
+
     sys.exit(app.exec())
