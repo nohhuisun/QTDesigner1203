@@ -1,139 +1,70 @@
-import sys
-import os
-from PyQt6.QtWidgets import (
-    QApplication, 
-    QWidget, 
-    QLineEdit, 
-    QTextEdit, 
-    QPushButton,
-    QVBoxLayout,  # 수직 레이아웃 관리
-    QHBoxLayout,  # 수평 레이아웃 관리
-    QMessageBox,  # 메시지 박스 사용 (sys.exit 대신 권장)
-    QLabel
-)
-from PyQt6.QtCore import Qt
-# Google GenAI 라이브러리 임포트
-try:
-    # 'google-genai' 대신 'google-generativeai'를 사용하는 경우도 있으므로
-    # 최신 라이브러리인 'google-genai'를 시도합니다.
-    from google import genai
-except ImportError:
-    # 만약 'google' 모듈이 없다면 설치 안내 후 종료
-    print("🚨 오류: 'google-genai' 라이브러리를 찾을 수 없습니다.")
-    print("설치하려면 터미널에서 'pip install google-genai' 명령을 실행하세요.")
-    sys.exit(1)
+💬 Gemini Q&A 챗봇 (PyQt6 + TTS 기능)
 
-# --- ⚠️ 중요: Gemini API 키 설정 ⚠️ ---
-# 사용자가 제공한 API 키를 환경 변수에 설정합니다.
-# 실제 키를 여기에 넣어주세요.
-os.environ["GEMINI_API_KEY"] = "제미나이 API Key"
-# ------------------------------------
+이 프로젝트는 Python의 PyQt6 프레임워크를 사용하여 구축된 간단한 데스크톱 챗봇 애플리케이션입니다. Google Gemini API를 백엔드로 사용하여 실시간으로 질문에 답변하며, gTTS 및 playsound 라이브러리를 이용한 텍스트 음성 변환(TTS) 기능을 제공하여 Gemini의 응답을 음성으로 들을 수 있습니다.
 
-class GeminiApp(QWidget):
-    
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Gemini Q&A 챗봇")
-        self.setGeometry(100, 100, 800, 600)  # 창 크기 설정
-        
-        # 1. Gemini 클라이언트 초기화 및 API 키 확인
-        self.client = None
-        api_key = os.getenv("GEMINI_API_KEY")
+✨ 주요 특징 (Features)
 
-        if not api_key or api_key == "YOUR_ACTUAL_GEMINI_API_KEY_HERE":
-            # API 키가 설정되지 않았거나 더미 값일 경우 경고 표시
-            QMessageBox.critical(
-                self, 
-                "API 키 오류", 
-                "⚠️ API 키가 설정되지 않았거나 유효하지 않은 더미 값입니다.\n"
-                "코드 상단 os.environ[\"GEMINI_API_KEY\"] = \"...\" 부분에 실제 키를 입력해야 합니다."
-            )
-            # 클라이언트를 None으로 두어 API 호출을 방지합니다.
-        else:
-            try:
-                # 환경 변수에서 API 키를 자동으로 로드 시도
-                self.client = genai.Client()
-            except Exception as e:
-                # API 초기화 실패 시 클라이언트를 None으로 설정하고 사용자에게 오류 메시지 표시
-                error_msg = f"Gemini API 클라이언트 초기화 오류: {e}"
-                QMessageBox.critical(self, "API 오류", "Gemini API 클라이언트 초기화에 실패했습니다.\n\n" + error_msg)
-                print(error_msg)
-                self.client = None
-            
-        # 2. UI 위젯 생성 (UI 파일을 대체)
-        self.answerDisplay = QTextEdit()  # 응답 출력 (QTextEdit)
-        self.answerDisplay.setReadOnly(True) 
-        self.answerDisplay.setText("질문을 입력하고 '전송' 버튼을 누르세요. (Gemini 2.5 Flash 사용)\n\n[제미나이nh]")
-        
-        self.lineEditMyQuestion = QLineEdit() # 질문 입력 (QLineEdit)
-        self.lineEditMyQuestion.setPlaceholderText("여기에 질문을 입력하세요...")
-        
-        self.btnSent = QPushButton("전송 (Sent)") # 전송 버튼 (QPushButton)
-        self.btnSent.setStyleSheet("background-color: #4CAF50; color: white; padding: 10px; font-weight: bold;")
+지속적인 대화 기록: QTextEdit 위젯에 사용자 질문과 Gemini 응답이 누적되어 대화의 흐름을 한눈에 파악할 수 있습니다.
 
-        # 3. 레이아웃 설정
-        main_layout = QVBoxLayout()
-        main_layout.addWidget(QLabel("Gemini 응답:"))
-        main_layout.addWidget(self.answerDisplay)
-        main_layout.addWidget(QLabel("나의 질문:"))
-        
-        input_layout = QHBoxLayout()
-        input_layout.addWidget(self.lineEditMyQuestion)
-        input_layout.addWidget(self.btnSent)
-        
-        main_layout.addLayout(input_layout)
-        self.setLayout(main_layout)
+비동기 TTS 재생: playsound의 블로킹(Blocking) 문제를 해결하기 위해 **TTSThread**라는 별도의 PyQt6 스레드를 사용하여 음성 재생 중에도 UI가 멈추지 않고 반응하도록 설계되었습니다.
 
-        # 4. 버튼 클릭 시그널 연결
-        self.btnSent.clicked.connect(self.ask_gemini) 
-        # Enter 키 입력 시에도 작동하도록 연결
-        self.lineEditMyQuestion.returnPressed.connect(self.ask_gemini)
+간편한 API 연동: google-genai 라이브러리를 사용하여 Gemini 2.5 Flash 모델과 손쉽게 통신합니다.
 
-    def ask_gemini(self): 
-        # API 클라이언트 초기화 실패 시 처리
-        if not self.client:
-            self.answerDisplay.setText("Gemini API 클라이언트가 초기화되지 않았습니다. API 키를 확인하세요. [제미나이nh]")
-            return
+API 키 관리: 코드가 사용자 제공 API 키를 환경 변수(GEMINI_API_KEY)에서 로드하는 것을 기본으로 하며, 임시 키를 코드 내에 포함하여 즉시 테스트가 가능하도록 설정되어 있습니다.
 
-        question = self.lineEditMyQuestion.text().strip()
+직관적인 UI: 질문 입력창, 전송 버튼, 답변 읽기 버튼 등으로 구성되어 있어 사용이 간편합니다.
 
-        if not question:
-            self.answerDisplay.setText("질문을 입력해주세요. [제미나이nh]")
-            return
-        
-        # 질문 입력창 비우기
-        self.lineEditMyQuestion.clear()
+🛠️ 설치 및 요구 사항 (Prerequisites)
 
-        # 응답 대기 메시지 표시
-        self.answerDisplay.setText(f"➡️ 질문: {question}\n\nGemini가 응답을 생성하는 중입니다... 잠시만 기다려주세요.")
-        QApplication.processEvents() # UI 갱신 (반드시 필요)
+이 애플리케이션을 실행하려면 Python 3.x 환경이 필요하며, 다음 라이브러리들을 설치해야 합니다.
 
-        try:
-            # API 호출
-            response = self.client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=question
-            )
+터미널이나 명령 프롬프트에서 아래 명령어를 실행하여 필요한 모든 패키지를 설치합니다.
 
-            # 응답 표시 및 [제미나이nh] 추가
-            # 이전 질문을 포함하여 응답을 표시
-            full_response_text = f"➡️ 질문: {question}\n\n" + response.text + "\n\n[제미나이nh]"
-            self.answerDisplay.setText(full_response_text)
-            
-        except Exception as e:
-            # API 호출 중 예외 처리
-            error_message = f"API 호출 중 오류 발생: {e}"
-            print(error_message)
-            self.answerDisplay.setText(f"➡️ 질문: {question}\n\n🚨 오류: {error_message}\n\n[제미나이nh]")
+pip install PyQt6 google-genai gtts playsound==1.2.2
 
 
-if __name__ == "__main__":
-    # QApplication 인스턴스 생성
-    app = QApplication(sys.argv)
-    
-    # 창 생성 및 표시
-    window = GeminiApp()
-    window.show()
-    
-    # 이벤트 루프 실행
-    sys.exit(app.exec())
+주의: playsound 라이브러리는 최신 버전에서 때때로 문제를 일으킬 수 있어, 안정적인 버전 1.2.2를 명시적으로 설치하는 것을 권장합니다.
+
+🚀 실행 방법 (How to Run)
+
+1. API 키 설정 (권장)
+
+보안을 위해 API 키는 환경 변수로 설정하는 것이 좋습니다.
+
+# Linux/macOS
+export GEMINI_API_KEY="YOUR_ACTUAL_GEMINI_API_KEY_HERE"
+
+# Windows (Command Prompt)
+set GEMINI_API_KEY="YOUR_ACTUAL_GEMINI_API_KEY_HERE"
+
+
+🔑 참고: 현재 코드는 사용자님께서 제공하신 키(AIzaSyDFYx3mr8dY8HwRMaPD2egzjVso7mkgops)를 코드 상단 os.environ 부분에 임시로 설정해 두었기 때문에, 별도의 환경 변수 설정 없이 바로 테스트할 수 있습니다. 하지만 실제 배포 시에는 환경 변수 사용을 권장합니다.
+
+2. 애플리케이션 실행
+
+파이썬 스크립트를 저장한 후 다음 명령어로 실행합니다.
+
+python gemini_chat_app.py
+
+
+💻 코드 구조 분석
+
+TTSThread 클래스의 역할
+
+가장 중요한 수정 사항이자 이 앱의 핵심 기능은 TTSThread에 있습니다.
+
+playsound 함수는 음성 재생이 완료될 때까지 메인 스레드를 완전히 멈추게(Blocking) 합니다. 데스크톱 애플리케이션(PyQt6)의 메인 스레드는 UI 이벤트 처리(버튼 클릭, 창 움직임 등)를 담당하는데, 이 스레드가 멈추면 **애플리케이션 전체가 멈추는 현상(Not Responding)**이 발생합니다.
+
+TTSThread는 다음과 같이 동작합니다.
+
+스레드 분리: QThread를 상속받아 TTS 작업을 메인 UI 스레드로부터 분리합니다.
+
+gTTS 파일 생성: run() 메서드 내에서 텍스트를 temp_response.mp3 파일로 저장합니다.
+
+playsound 실행: 블로킹 함수인 playsound()를 이 별도 스레드에서 실행합니다.
+
+시그널링: 재생이 완료되거나 오류가 발생하면 self.finished.emit() 시그널을 통해 메인 UI에 알려줍니다.
+
+UI 복구: 메인 스레드의 on_tts_finished 슬롯이 시그널을 받아 "답변 읽기" 버튼을 다시 활성화하고 텍스트를 원래대로 되돌립니다.
+
+이 구조 덕분에 사용자는 TTS 음성을 들으면서도 동시에 새로운 질문을 입력하거나 창을 이동하는 등 UI와 상호작용할 수 있습니다.
